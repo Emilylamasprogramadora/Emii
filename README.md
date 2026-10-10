@@ -55,7 +55,7 @@ I'm a curious and creative person, always ready to learn something new. I believ
 <img src="h-game.svg" width="100%" alt="Play a Game">
 
 <p align="center">
-  <a href="https://TU-USUARIO.github.io/TU-USUARIO/juego.html">
+  <a href="https://emilylamasprogramadora.github.io/Emii//juego.html">
     <img src="https://img.shields.io/badge/PLAY-Catch_the_Flowers-e75a9b?style=for-the-badge&labelColor=c77dff" alt="Play">
   </a>
 </p>
