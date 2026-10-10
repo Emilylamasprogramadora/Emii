@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atrapa las flores</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin:0; height:100%; overflow:hidden; background:linear-gradient(#ffe3ef,#ffb3d1); font-family:'Fredoka','Trebuchet MS',sans-serif; color:#7a1f55; }
+  #wrap { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; }
+  #hud { display:flex; gap:28px; font-size:22px; font-weight:600; }
+  #box { position:relative; width:min(96vw,57vh); }
+  canvas { display:block; width:100%; height:auto; border-radius:22px; background:linear-gradient(#fff0f6,#ffc2da); box-shadow:0 12px 30px rgba(194,24,91,.3); touch-action:none; }
+  #panel { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; text-align:center; padding:24px; background:rgba(255,240,246,.82); border-radius:22px; }
+  #panel h1 { margin:0; font-size:34px; color:#c2185b; }
+  #panel p { margin:0; font-size:18px; line-height:1.4; }
+  button { font-family:inherit; font-size:20px; font-weight:600; color:#fff; background:#e75a9b; border:0; border-radius:999px; padding:12px 34px; cursor:pointer; box-shadow:0 6px 0 #a3195b; }
+  button:active { transform:translateY(4px); box-shadow:0 2px 0 #a3195b; }
+  button:focus-visible { outline:3px solid #7b2cbf; outline-offset:3px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="hud"><span>Flores: <b id="score">0</b></span><span>Vidas: <b id="lives">5</b></span><span>Mejor: <b id="best">0</b></span></div>
+  <div id="box">
+    <canvas id="c" width="480" height="640"></canvas>
+    <div id="panel">
+      <h1 id="title">Atrapa las flores</h1>
+      <p id="msg">Mueve la canasta con el dedo, el mouse o las flechas. Atrapa las flores de colores y esquiva los capullos marchitos oscuros.</p>
+      <button id="btn">Jugar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const c = document.getElementById('c'), x = c.getContext('2d');
+const W = 480, H = 640;
+const COLORS = ['#ff5c8a','#ff8fbf','#ff9a3c','#c77dff','#ffd84d','#7ad7f0','#ffffff'];
+let items = [], petals = [], px = W/2, score = 0, lives = 5, running = false, last = 0, spawnT = 0;
+let best = 0;
+try { best = +localStorage.getItem('bestFlores') || 0; } catch(e) {}
+const keys = {};
+
+document.getElementById('best').textContent = best;
+
+for (let i = 0; i < 18; i++) petals.push({ x: Math.random()*W, y: Math.random()*H, v: .4+Math.random()*.7, r: 4+Math.random()*4, a: Math.random()*6 });
+
+function flower(cx, cy, r, col, rot) {
+  x.save(); x.translate(cx, cy); x.rotate(rot); x.fillStyle = col;
+  for (let i = 0; i < 5; i++) {
+    x.rotate(Math.PI*2/5); x.beginPath(); x.ellipse(0, -r*.6, r*.38, r*.62, 0, 0, 7); x.fill();
+  }
+  x.fillStyle = '#fff3a8'; x.beginPath(); x.arc(0, 0, r*.28, 0, 7); x.fill();
+  x.restore();
+}
+
+function wilted(cx, cy, r, rot) {
+  x.save(); x.translate(cx, cy); x.rotate(rot); x.fillStyle = '#4a1d6b'; x.beginPath();
+  for (let i = 0; i < 16; i++) { const a = i*Math.PI/8, d = i%2 ? r*.5 : r; x.lineTo(Math.cos(a)*d, Math.sin(a)*d); }
+  x.closePath(); x.fill(); x.fillStyle = '#7b2cbf'; x.beginPath(); x.arc(0,0,r*.22,0,7); x.fill(); x.restore();
+}
+
+function basket() {
+  const y = 590;
+  x.fillStyle = '#e75a9b'; x.beginPath();
+  x.moveTo(px-55, y); x.lineTo(px+55, y); x.lineTo(px+42, y+38); x.quadraticCurveTo(px, y+46, px-42, y+38); x.closePath(); x.fill();
+  x.strokeStyle = '#ffd1e3'; x.lineWidth = 3;
+  for (let i = -30; i <= 30; i += 20) { x.beginPath(); x.moveTo(px+i, y+6); x.lineTo(px+i*.8, y+36); x.stroke(); }
+  x.strokeStyle = '#a3195b'; x.lineWidth = 5; x.beginPath(); x.moveTo(px-55, y); x.lineTo(px+55, y); x.stroke();
+}
+
+function setX(clientX) {
+  const r = c.getBoundingClientRect();
+  px = Math.max(55, Math.min(W-55, (clientX - r.left) * W / r.width));
+}
+c.addEventListener('pointermove', e => setX(e.clientX));
+c.addEventListener('pointerdown', e => setX(e.clientX));
+addEventListener('keydown', e => { keys[e.key] = true; });
+addEventListener('keyup', e => { keys[e.key] = false; });
+
+function update(dt) {
+  if (keys['ArrowLeft'] || keys['a']) px = Math.max(55, px - 6*dt);
+  if (keys['ArrowRight'] || keys['d']) px = Math.min(W-55, px + 6*dt);
+
+  spawnT += dt*16;
+  if (spawnT > Math.max(380, 950 - score*10)) {
+    spawnT = 0;
+    items.push({ x: 30+Math.random()*(W-60), y: -30, v: 2+score*.04+Math.random()*1.2, bad: Math.random() < .18,
+      col: COLORS[Math.floor(Math.random()*COLORS.length)], rot: 0, vr: (Math.random()-.5)*.08 });
+  }
+  for (const it of items) { it.y += it.v*dt; it.rot += it.vr*dt; }
+
+  items = items.filter(it => {
+    if (it.y > 575 && it.y < 625 && Math.abs(it.x - px) < 58) {
+      if (it.bad) lives--; else score++;
+      return false;
+    }
+    if (it.y > H+30) { if (!it.bad) lives--; return false; }
+    return true;
+  });
+  for (const p of petals) { p.y += p.v*dt; p.a += .02*dt; if (p.y > H+10) { p.y = -10; p.x = Math.random()*W; } }
+
+  document.getElementById('score').textContent = score;
+  document.getElementById('lives').textContent = Math.max(lives, 0);
+  if (lives <= 0) endGame();
+}
+
+function draw() {
+  x.clearRect(0, 0, W, H);
+  x.fillStyle = 'rgba(255,255,255,.7)';
+  for (const p of petals) { x.save(); x.translate(p.x, p.y); x.rotate(p.a); x.beginPath(); x.ellipse(0,0,p.r*.6,p.r,0,0,7); x.fill(); x.restore(); }
+  for (const it of items) it.bad ? wilted(it.x, it.y, 20, it.rot) : flower(it.x, it.y, 22, it.col, it.rot);
+  basket();
+}
+
+function loop(ts) {
+  if (!running) return;
+  const dt = Math.min((ts - last)/16.67, 3); last = ts;
+  update(dt); draw();
+  if (running) requestAnimationFrame(loop);
+}
+
+function startGame() {
+  items = []; score = 0; lives = 5; spawnT = 0; running = true;
+  document.getElementById('panel').style.display = 'none';
+  last = performance.now(); requestAnimationFrame(loop);
+}
+
+function endGame() {
+  running = false;
+  if (score > best) { best = score; try { localStorage.setItem('bestFlores', best); } catch(e) {} }
+  document.getElementById('best').textContent = best;
+  document.getElementById('title').textContent = 'Fin del juego';
+  document.getElementById('msg').textContent = 'Atrapaste ' + score + ' flores. Tu mejor marca es ' + best + '.';
+  document.getElementById('btn').textContent = 'Jugar otra vez';
+  document.getElementById('panel').style.display = 'flex';
+}
+
+document.getElementById('btn').addEventListener('click', startGame);
+draw();
+</script>
+</body>
+</html>
